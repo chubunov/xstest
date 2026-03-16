@@ -269,16 +269,10 @@ class OrderManager {
         }
         
         try {
-            // Пытаемся распарсить дату
             const d = new Date(date);
-            
-            // Проверяем, что дата валидна
             if (isNaN(d.getTime())) return '';
             
-            // УБИРАЕМ ПРИБАВЛЕНИЕ 3 ЧАСОВ!
-            // d.setHours(d.getHours() + 3); // <-- ЭТУ СТРОКУ НУЖНО УДАЛИТЬ
-            
-            // Форматируем: 15.03.2026 14:20
+            // НЕ ПРИБАВЛЯЕМ ЧАСЫ - дата уже правильная
             const day = String(d.getDate()).padStart(2, '0');
             const month = String(d.getMonth() + 1).padStart(2, '0');
             const year = d.getFullYear();
@@ -425,7 +419,7 @@ class OrderManager {
         return this.updateOrder(id, {
             status: 'Выдан',
             finalPrice: finalPrice,
-            completionDate: this.formatDate(new Date())
+            completionDate: new Date().toLocaleString('ru-RU') // Просто локальная дата
         });
     }
 
