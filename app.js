@@ -268,11 +268,17 @@ class OrderManager {
             return date;
         }
         
+        // Если дата в формате "16.03.2026, 12:34:15" из Google Sheets
+        if (typeof date === 'string' && date.includes(',')) {
+            // Просто возвращаем строку, убирая секунды если нужно
+            return date.replace(/:\d{2}$/, ''); // убираем секунды если есть
+        }
+        
         try {
             const d = new Date(date);
             if (isNaN(d.getTime())) return '';
             
-            // НЕ ПРИБАВЛЯЕМ ЧАСЫ - дата уже правильная
+            // Преобразуем в локальное время без добавления часов
             const day = String(d.getDate()).padStart(2, '0');
             const month = String(d.getMonth() + 1).padStart(2, '0');
             const year = d.getFullYear();
@@ -282,7 +288,7 @@ class OrderManager {
             return `${day}.${month}.${year} ${hours}:${minutes}`;
         } catch (e) {
             console.error('Ошибка форматирования даты:', e);
-            return '';
+            return date; // Возвращаем исходное значение в случае ошибки
         }
     }
 
