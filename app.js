@@ -735,7 +735,7 @@ class OrderManager {
                         <tr><td>Предоплата:</td><td>${this.safeString(order.prepayment) === '-' ? 'нет' : this.safeString(order.prepayment)}</td></tr>
                         <tr><td>Гарантия:</td><td>${this.safeString(order.warranty) || '30 дней'}</td></tr>
                         <tr><td>Дата приема:</td><td>${this.formatDate(order.acceptancedate)}</td></tr>
-                        <tr><td>Срок ремонта:</td><td>до ${new Date(Date.now() + 2*24*60*60*1000).toLocaleDateString('ru-RU')}</td></tr>
+                        <tr><td>Приблизительный срок ремонта:</td><td>до ${new Date(Date.now() + 2*24*60*60*1000).toLocaleDateString('ru-RU')}</td></tr>
                     </table>
                     
                     <div class="conditions">
