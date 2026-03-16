@@ -268,27 +268,27 @@ class OrderManager {
             return date;
         }
         
-        // Если дата в формате "16.03.2026, 12:34:15" из Google Sheets
+        // Если дата в формате "15.03.2026, 15:53" из Google Sheets
         if (typeof date === 'string' && date.includes(',')) {
-            // Просто возвращаем строку, убирая секунды если нужно
-            return date.replace(/:\d{2}$/, ''); // убираем секунды если есть
+            // Возвращаем как есть, без изменений
+            return date.trim();
         }
         
         try {
             const d = new Date(date);
             if (isNaN(d.getTime())) return '';
             
-            // Преобразуем в локальное время без добавления часов
-            const day = String(d.getDate()).padStart(2, '0');
-            const month = String(d.getMonth() + 1).padStart(2, '0');
-            const year = d.getFullYear();
-            const hours = String(d.getHours()).padStart(2, '0');
-            const minutes = String(d.getMinutes()).padStart(2, '0');
+            // Получаем компоненты даты в UTC, чтобы избежать смещения
+            const day = String(d.getUTCDate()).padStart(2, '0');
+            const month = String(d.getUTCMonth() + 1).padStart(2, '0');
+            const year = d.getUTCFullYear();
+            const hours = String(d.getUTCHours()).padStart(2, '0');
+            const minutes = String(d.getUTCMinutes()).padStart(2, '0');
             
             return `${day}.${month}.${year} ${hours}:${minutes}`;
         } catch (e) {
             console.error('Ошибка форматирования даты:', e);
-            return date; // Возвращаем исходное значение в случае ошибки
+            return date;
         }
     }
 
@@ -425,7 +425,7 @@ class OrderManager {
         return this.updateOrder(id, {
             status: 'Выдан',
             finalPrice: finalPrice,
-            completionDate: new Date().toLocaleString('ru-RU') // Просто локальная дата
+            completionDate: new Date().toLocaleString('ru-RU', { timeZone: 'UTC' }) // Явно указываем UTC
         });
     }
 
