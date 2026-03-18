@@ -671,7 +671,15 @@ class OrderManager {
     // ========== ФУНКЦИИ ПЕЧАТИ ==========
 
     printOrder(order) {
-        const printWindow = window.open('', '_blank');
+        // Используем iframe вместо window.open для лучшего контроля
+        const iframe = document.createElement('iframe');
+        iframe.style.position = 'absolute';
+        iframe.style.width = '0';
+        iframe.style.height = '0';
+        iframe.style.border = 'none';
+        document.body.appendChild(iframe);
+        
+        const printDocument = iframe.contentWindow.document;
         
         const html = `
             <!DOCTYPE html>
@@ -681,13 +689,18 @@ class OrderManager {
                 <meta charset="utf-8">
                 <style>
                     * { margin: 0; padding: 0; box-sizing: border-box; }
-                    @page { size: A4; margin: 1cm; }
+                    @page { 
+                        size: A4; 
+                        margin: 1cm;
+                    }
                     body {
                         font-family: 'Times New Roman', Times, serif;
                         font-size: 10pt;
                         line-height: 1.2;
                         color: #000;
                         background: #fff;
+                        margin: 0;
+                        padding: 0;
                     }
                     .contract { max-width: 100%; margin: 0 auto; }
                     .header {
@@ -838,22 +851,33 @@ class OrderManager {
                         <div>Клиент: _________________________</div>
                         <div>Мастер: _________________________</div>
                     </div>
-                    
-                    <div class="no-print" style="text-align: center; margin-top: 20px;">
-                        <button onclick="window.print()" style="padding: 8px 20px; font-size: 14px; cursor: pointer;">🖨️ Печать</button>
-                        <button onclick="window.close()" style="padding: 8px 20px; font-size: 14px; cursor: pointer;">✖️ Закрыть</button>
-                    </div>
                 </div>
                 
                 <script>
-                    setTimeout(() => { window.print(); }, 500);
+                    // Убираем выделение текста
+                    document.body.style.userSelect = 'none';
+                    
+                    // Автоматическая печать после полной загрузки
+                    window.onload = function() {
+                        setTimeout(function() {
+                            window.print();
+                            // Опционально: закрыть окно после печати
+                            // window.close();
+                        }, 500);
+                    };
                 </script>
             </body>
             </html>
         `;
         
-        printWindow.document.write(html);
-        printWindow.document.close();
+        printDocument.open();
+        printDocument.write(html);
+        printDocument.close();
+        
+        // Удаляем iframe после печати (опционально)
+        setTimeout(() => {
+            document.body.removeChild(iframe);
+        }, 60000); // Удаляем через минуту, чтобы дать время на печать
     }
 
     // ========== ПРОСМОТР ЗАКАЗА ==========
