@@ -227,34 +227,52 @@ class OrderManager {
         this.setupEventListeners();
     }
 
-    async loadOrders() {
+    async loadOrders(force = false) {
         if (!this.isAuthenticated) return;
         
         this.showLoading();
         try {
-            const response = await fetch(`${this.apiUrl}?action=getOrders&t=${Date.now()}`);
+            // Если force = true, добавляем параметр для сброса кэша на сервере
+            const url = force 
+                ? `${this.apiUrl}?action=getOrders&t=${Date.now()}&force=true`
+                : `${this.apiUrl}?action=getOrders&t=${Date.now()}`;
+            
+            const response = await fetch(url);
             const data = await response.json();
             
             if (data.success) {
                 this.orders = (data.orders || []).map(order => this.normalizeOrder(order));
                 this.saveToCache();
                 this.hideLoading();
+                
+                // Если это принудительная загрузка, показываем уведомление
+                if (force) {
+                    this.showNotification('Данные обновлены с сервера', 'info');
+                }
             } else {
-                this.loadFromCache();
-                this.showNotification('Не удалось загрузить данные с сервера, используем кэш', 'warning');
+                // Если сервер вернул ошибку, пробуем загрузить из кэша
+                if (!this.loadFromCache()) {
+                    this.showNotification('Не удалось загрузить данные с сервера', 'warning');
+                }
             }
         } catch (error) {
             console.error('Ошибка загрузки:', error);
-            this.loadFromCache();
-            this.showNotification('Ошибка соединения, используем кэш', 'warning');
+            // При ошибке сети пробуем загрузить из кэша
+            if (!this.loadFromCache()) {
+                this.showNotification('Ошибка соединения', 'warning');
+            }
+        } finally {
+            this.hideLoading();
         }
-        this.hideLoading();
     }
-
+    
     normalizeOrder(order) {
         if (!order) return {};
         
         const normalized = {};
+        
+        // Специальная обработка для важных полей
+        const importantFields = ['id', 'ordernumber', 'customername', 'phone', 'status'];
         
         Object.keys(order).forEach(key => {
             const value = order[key];
@@ -267,27 +285,58 @@ class OrderManager {
             }
         });
         
+        // Убеждаемся, что важные поля существуют
+        importantFields.forEach(field => {
+            if (!(field in normalized)) {
+                normalized[field] = '';
+            }
+        });
+        
         return normalized;
     }
-
+    
     saveToCache() {
-        localStorage.setItem('xplay_orders_cache', JSON.stringify({
-            orders: this.orders,
-            timestamp: Date.now()
-        }));
+        try {
+            localStorage.setItem('xplay_orders_cache', JSON.stringify({
+                orders: this.orders,
+                timestamp: Date.now()
+            }));
+            return true;
+        } catch (e) {
+            console.error('Ошибка сохранения в кэш:', e);
+            return false;
+        }
     }
-
+    
     loadFromCache() {
         const cached = localStorage.getItem('xplay_orders_cache');
         if (cached) {
             try {
                 const data = JSON.parse(cached);
-                this.orders = (data.orders || []).map(order => this.normalizeOrder(order));
+                if (data.orders && Array.isArray(data.orders)) {
+                    this.orders = data.orders.map(order => this.normalizeOrder(order));
+                    console.log(`Загружено ${this.orders.length} заказов из кэша`);
+                    return true;
+                }
             } catch (e) {
                 console.error('Ошибка загрузки из кэша:', e);
-                this.orders = [];
             }
         }
+        this.orders = [];
+        return false;
+    }
+    
+    // Добавляем метод для очистки кэша (полезно для администратора)
+    clearCache() {
+        if (!this.isAdmin()) {
+            this.showNotification('❌ Только администратор может очищать кэш', 'danger');
+            return;
+        }
+        
+        localStorage.removeItem('xplay_orders_cache');
+        this.orders = [];
+        this.showNotification('Кэш очищен', 'success');
+        this.loadOrders(true); // Принудительно загружаем с сервера
     }
 
     // ========== ФУНКЦИИ ДЛЯ ОБРАБОТКИ ТЕКСТА ==========
@@ -413,21 +462,28 @@ class OrderManager {
             // Добавляем timestamp для избежания кеширования
             params.append('t', Date.now());
             
-            const response = await fetch(`${this.apiUrl}?${params.toString()}`, {
+            // Отправляем запрос на сервер
+            await fetch(`${this.apiUrl}?${params.toString()}`, {
                 method: 'GET',
-                mode: 'no-cors', // Добавляем no-cors режим
-                headers: {
-                    'Content-Type': 'application/x-www-form-urlencoded',
-                }
+                mode: 'no-cors'
             });
             
-            // В режиме no-cors мы не можем прочитать ответ
-            // Поэтому предполагаем успех и перезагружаем данные
-            setTimeout(async () => {
-                await this.loadOrders();
-                this.showNotification('✅ Заказ успешно создан!', 'success');
-            }, 1000);
+            // Ждем немного, чтобы сервер обработал запрос
+            await new Promise(resolve => setTimeout(resolve, 1500));
             
+            // Принудительно загружаем заказы с сервера (force = true)
+            await this.loadOrders(true);
+            
+            // Обновляем отображение в зависимости от текущего вида
+            if (this.currentView === 'active') {
+                this.renderActiveOrders();
+            } else if (this.currentView === 'dashboard') {
+                this.renderDashboard();
+            } else {
+                this.render();
+            }
+            
+            this.showNotification('✅ Заказ успешно создан!', 'success');
             return true;
             
         } catch (error) {
