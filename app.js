@@ -12,6 +12,7 @@ class OrderManager {
         this.apiUrl = 'https://script.google.com/macros/s/AKfycbx9hyNdAxvmzp5oJFmfChlwVWjPzb5V_L69ZD4didRL67k4ksjdp4J4_7iTxNYx9-fziw/exec';
         this.loading = false;
         this.currentOrderId = null;
+        // Вызываем проверку авторизации при создании экземпляра
         this.checkAuth();
     }
 
@@ -27,15 +28,28 @@ class OrderManager {
                     this.currentUser = auth.user;
                     this.userRole = auth.role;
                     this.updateUIForAuth();
+                    
+                    // Восстанавливаем последнее представление из sessionStorage
+                    const savedView = sessionStorage.getItem('xplay_current_view');
+                    if (savedView && ['dashboard', 'active', 'completed', 'search'].includes(savedView)) {
+                        this.currentView = savedView;
+                    }
+                    
                     return true;
+                } else {
+                    // Если срок истек - удаляем
+                    localStorage.removeItem('xplay_auth');
                 }
             } catch (e) {
                 console.error('Ошибка проверки авторизации:', e);
+                localStorage.removeItem('xplay_auth');
             }
         }
+        
         this.isAuthenticated = false;
         this.currentUser = null;
         this.userRole = null;
+        this.updateUIForAuth();
         return false;
     }
 
@@ -54,7 +68,13 @@ class OrderManager {
                     localStorage.setItem('xplay_auth', JSON.stringify({
                         user: this.currentUser,
                         role: this.userRole,
-                        expires: Date.now() + 30 * 24 * 60 * 60 * 1000
+                        expires: Date.now() + 30 * 24 * 60 * 60 * 1000 // 30 дней
+                    }));
+                } else {
+                    // Если не "запомнить меня", сохраняем в sessionStorage (до закрытия браузера)
+                    sessionStorage.setItem('xplay_auth', JSON.stringify({
+                        user: this.currentUser,
+                        role: this.userRole
                     }));
                 }
                 
@@ -83,6 +103,8 @@ class OrderManager {
         this.currentUser = null;
         this.userRole = null;
         localStorage.removeItem('xplay_auth');
+        sessionStorage.removeItem('xplay_auth');
+        sessionStorage.removeItem('xplay_current_view');
         this.updateUIForAuth();
         this.showLoginPage();
         this.showNotification('👋 Выход выполнен', 'info');
@@ -148,14 +170,14 @@ class OrderManager {
                         <h5 class="text-center mb-4">Вход в систему</h5>
                         <div class="mb-3">
                             <label class="form-label">Логин</label>
-                            <input type="text" class="form-control" id="loginInput" placeholder="Введите логин">
+                            <input type="text" class="form-control" id="loginInput" placeholder="Введите логин" autofocus>
                         </div>
                         <div class="mb-3">
                             <label class="form-label">Пароль</label>
                             <input type="password" class="form-control" id="passwordInput" placeholder="Введите пароль">
                         </div>
                         <div class="mb-3 form-check">
-                            <input type="checkbox" class="form-check-input" id="rememberMe">
+                            <input type="checkbox" class="form-check-input" id="rememberMe" checked>
                             <label class="form-check-label">Запомнить меня</label>
                         </div>
                         <button class="btn btn-primary w-100" onclick="login()">
@@ -168,17 +190,40 @@ class OrderManager {
                 </div>
             </div>
         `;
+        
+        // Добавляем обработчик нажатия Enter
+        document.getElementById('loginInput').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') login();
+        });
+        document.getElementById('passwordInput').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') login();
+        });
+    }
+
+    // ========== СОХРАНЕНИЕ СОСТОЯНИЯ ==========
+    
+    saveCurrentView() {
+        if (this.isAuthenticated) {
+            sessionStorage.setItem('xplay_current_view', this.currentView);
+        }
     }
 
     // ========== РАБОТА С ДАННЫМИ ==========
 
     async init() {
-        if (this.isAuthenticated) {
+        // Проверяем авторизацию
+        const isAuth = this.checkAuth();
+        
+        if (isAuth) {
+            // Загружаем данные
             await this.loadOrders();
+            // Рендерим текущее представление
             this.render();
         } else {
+            // Показываем страницу входа
             this.showLoginPage();
         }
+        
         this.setupEventListeners();
     }
 
@@ -196,6 +241,7 @@ class OrderManager {
                 this.hideLoading();
             } else {
                 this.loadFromCache();
+                this.showNotification('Не удалось загрузить данные с сервера, используем кэш', 'warning');
             }
         } catch (error) {
             console.error('Ошибка загрузки:', error);
@@ -334,7 +380,7 @@ class OrderManager {
         if (cleaned.length === 11 && cleaned.startsWith('7')) {
             return `+7 (${cleaned.substring(1, 4)}) ${cleaned.substring(4, 7)}-${cleaned.substring(7, 9)}-${cleaned.substring(9, 11)}`;
         } else if (cleaned.length === 10) {
-            return `+7 (${cleaned.substring(0, 3)}) ${cleaned.substring(3, 6)}-${cleaned.substring(6, 8)}-${cleaned.substring(8, 10)}`;
+            return `+7 (${cleaned.substring(0, 3)}) ${cleaned.substring(3, 6)}-${cleaned.substring(6, 9)}-${cleaned.substring(9, 11)}`;
         } else if (cleaned.length === 11 && cleaned.startsWith('8')) {
             return `+7 (${cleaned.substring(1, 4)}) ${cleaned.substring(4, 7)}-${cleaned.substring(7, 9)}-${cleaned.substring(9, 11)}`;
         }
@@ -425,7 +471,7 @@ class OrderManager {
         return this.updateOrder(id, {
             status: 'Выдан',
             finalPrice: finalPrice,
-            completionDate: new Date().toLocaleString('ru-RU', { timeZone: 'UTC' }) // Явно указываем UTC
+            completionDate: new Date().toLocaleString('ru-RU', { timeZone: 'UTC' })
         });
     }
 
@@ -523,6 +569,7 @@ class OrderManager {
 
     showLoading() {
         this.loading = true;
+        // Можно добавить индикатор загрузки
     }
 
     hideLoading() {
@@ -1348,6 +1395,7 @@ class OrderManager {
             return;
         }
         this.currentView = 'dashboard';
+        this.saveCurrentView();
         this.currentPage = 1;
         this.render();
     }
@@ -1358,6 +1406,7 @@ class OrderManager {
             return;
         }
         this.currentView = 'active';
+        this.saveCurrentView();
         this.currentPage = 1;
         this.render();
     }
@@ -1372,6 +1421,7 @@ class OrderManager {
             return;
         }
         this.currentView = 'completed';
+        this.saveCurrentView();
         this.currentPage = 1;
         this.render();
     }
@@ -1382,6 +1432,7 @@ class OrderManager {
             return;
         }
         this.currentView = 'search';
+        this.saveCurrentView();
         this.render();
     }
 
