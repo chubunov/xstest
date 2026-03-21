@@ -9,7 +9,7 @@ class OrderManager {
         this.currentUser = null;
         this.userRole = null;
         // ЗАМЕНИТЕ ЭТОТ URL НА ВАШ ИЗ GOOGLE APPS SCRIPT
-        this.apiUrl = 'https://script.google.com/macros/s/AKfycbyI9RvY3AIE2zAK8P4eueUsFu3Hv5nZ4reTa9nUJXS3LLq0JiCqa1xQ-Iwa4YZQg5DU/exec';
+        this.apiUrl = 'https://script.google.com/macros/s/AKfycbzZh4-e7DaTLroDNrxacASY9EA6tucIJk9knQW-R7_3EhfSBR6J5i_Ofn9jAYB5cEnn/exec';
         this.loading = false;
         this.currentOrderId = null;
         this.checkAuth();
