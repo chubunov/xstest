@@ -86,6 +86,12 @@
             border: none;
         }
         
+        .btn-primary:disabled {
+            opacity: 0.7;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
         .stat-card {
             background: white;
             border-radius: 15px;
@@ -229,6 +235,47 @@
             margin-left: 5px;
         }
         
+        /* Глобальный индикатор загрузки */
+        #globalLoading {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            z-index: 99999;
+            justify-content: center;
+            align-items: center;
+            backdrop-filter: blur(3px);
+        }
+        
+        .loading-content {
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            text-align: center;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+            animation: pulse 2s infinite;
+        }
+        
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+            100% { transform: scale(1); }
+        }
+        
+        .spinner-large {
+            width: 4rem;
+            height: 4rem;
+            border-width: 0.4rem;
+        }
+        
+        /* Анимация для кнопок */
+        .btn .spinner-border {
+            margin-right: 5px;
+        }
+        
         @media print {
             .no-print, .navbar, .footer, .btn, .modal-footer {
                 display: none !important;
@@ -288,6 +335,9 @@
                             <li><hr class="dropdown-divider"></li>
                             <li><a class="dropdown-item" href="#" onclick="exportData()">
                                 <i class="bi bi-download"></i> Экспорт данных
+                            </a></li>
+                            <li><a class="dropdown-item" href="#" onclick="if(orderManager && orderManager.clearCache) orderManager.clearCache()">
+                                <i class="bi bi-database"></i> Очистить кэш
                             </a></li>
                         </ul>
                     </li>
@@ -371,7 +421,7 @@
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
-                    <form id="orderForm" onsubmit="event.preventDefault(); saveOrder();">
+                    <form id="orderForm" onsubmit="event.preventDefault(); saveOrderWithProtection(this);">
                         <input type="hidden" id="orderId">
                         
                         <div class="row mb-3">
@@ -443,7 +493,7 @@
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
-                    <button type="button" class="btn btn-primary" onclick="saveOrder()">
+                    <button type="button" class="btn btn-primary" id="saveOrderBtn" onclick="saveOrderWithProtection(this)">
                         <i class="bi bi-save"></i> Сохранить договор
                     </button>
                 </div>
@@ -588,8 +638,168 @@
         </div>
     </div>
 
+    <!-- Глобальный индикатор загрузки -->
+    <div id="globalLoading">
+        <div class="loading-content">
+            <div class="spinner-border text-primary spinner-large mb-3" role="status">
+                <span class="visually-hidden">Загрузка...</span>
+            </div>
+            <h4 class="mb-2">Сохранение заказа...</h4>
+            <p class="text-muted mb-0">Пожалуйста, подождите</p>
+        </div>
+    </div>
+
     <!-- Подключаем Bootstrap JS -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    
+    <!-- Защита от множественных кликов и вспомогательные функции -->
+    <script>
+    // Глобальная защита от множественных кликов
+    let isSaving = false;
+    let lastSaveTime = 0;
+    const SAVE_COOLDOWN = 5000; // 5 секунд
+
+    function saveOrderWithProtection(btn) {
+        // Проверяем, не сохраняется ли уже заказ
+        if (isSaving) {
+            showNotification('⚠️ Заказ уже сохраняется, подождите...', 'warning');
+            return;
+        }
+        
+        // Проверяем время последнего сохранения
+        const now = Date.now();
+        if (now - lastSaveTime < SAVE_COOLDOWN) {
+            const secondsLeft = Math.ceil((SAVE_COOLDOWN - (now - lastSaveTime)) / 1000);
+            showNotification(`⏳ Подождите ${secondsLeft} сек. перед повторным сохранением`, 'warning');
+            return;
+        }
+        
+        // Валидация формы
+        const form = document.getElementById('orderForm');
+        if (!form.checkValidity()) {
+            form.reportValidity();
+            return;
+        }
+        
+        // Блокируем кнопку
+        isSaving = true;
+        lastSaveTime = now;
+        
+        if (btn) {
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Сохранение...';
+        }
+        
+        // Показываем глобальный индикатор
+        showGlobalLoading(true);
+        
+        // Вызываем оригинальную функцию сохранения
+        try {
+            const result = saveOrder();
+            
+            // Если результат - Promise, ждем его
+            if (result && typeof result.then === 'function') {
+                result.then(() => {
+                    // Сразу после успешного сохранения
+                    showGlobalLoading(false);
+                    isSaving = false;
+                    if (btn) {
+                        btn.disabled = false;
+                        btn.innerHTML = '<i class="bi bi-save"></i> Сохранить договор';
+                    }
+                }).catch(() => {
+                    // В случае ошибки тоже скрываем
+                    showGlobalLoading(false);
+                    isSaving = false;
+                    if (btn) {
+                        btn.disabled = false;
+                        btn.innerHTML = '<i class="bi bi-save"></i> Сохранить договор';
+                    }
+                });
+            } else {
+                // Если синхронная функция
+                setTimeout(() => {
+                    isSaving = false;
+                    showGlobalLoading(false);
+                    if (btn) {
+                        btn.disabled = false;
+                        btn.innerHTML = '<i class="bi bi-save"></i> Сохранить договор';
+                    }
+                }, SAVE_COOLDOWN);
+            }
+        } catch (error) {
+            console.error('Ошибка при сохранении:', error);
+            showNotification('❌ Ошибка при сохранении заказа', 'danger');
+            
+            setTimeout(() => {
+                isSaving = false;
+                showGlobalLoading(false);
+                if (btn) {
+                    btn.disabled = false;
+                    btn.innerHTML = '<i class="bi bi-save"></i> Сохранить договор';
+                }
+            }, SAVE_COOLDOWN);
+        }
+    }
+
+    // Функция для показа/скрытия глобального индикатора
+    function showGlobalLoading(show) {
+        const loader = document.getElementById('globalLoading');
+        if (loader) {
+            loader.style.display = show ? 'flex' : 'none';
+        }
+    }
+
+    // Функция для показа уведомлений
+    function showNotification(message, type = 'info') {
+        if (window.orderManager && typeof orderManager.showNotification === 'function') {
+            orderManager.showNotification(message, type);
+        } else {
+            // Создаем временное уведомление, если orderManager еще не загружен
+            const alertDiv = document.createElement('div');
+            alertDiv.className = `alert alert-${type} alert-dismissible fade show position-fixed top-0 end-0 m-3`;
+            alertDiv.style.zIndex = '99999';
+            alertDiv.style.minWidth = '300px';
+            alertDiv.innerHTML = `
+                ${message}
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            `;
+            document.body.appendChild(alertDiv);
+            
+            setTimeout(() => {
+                alertDiv.remove();
+            }, 5000);
+        }
+    }
+
+    // Дополнительная защита для кнопки сохранения при отправке формы
+    document.addEventListener('DOMContentLoaded', function() {
+        const saveBtn = document.getElementById('saveOrderBtn');
+        if (saveBtn) {
+            // Предотвращаем двойной клик на уровне браузера
+            saveBtn.addEventListener('dblclick', function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                showNotification('⚠️ Используйте одиночный клик для сохранения', 'warning');
+                return false;
+            });
+        }
+        
+        // Защита от случайной отправки формы при нажатии Enter
+        const orderForm = document.getElementById('orderForm');
+        if (orderForm) {
+            orderForm.addEventListener('keypress', function(e) {
+                if (e.key === 'Enter' && e.target.tagName !== 'TEXTAREA') {
+                    e.preventDefault();
+                }
+            });
+        }
+    });
+
+    // Сохраняем оригинальную функцию для использования
+    window.originalSaveOrder = window.saveOrder;
+    </script>
+
     <!-- Подключаем основной скрипт -->
     <script src="app.js"></script>
 </body>
