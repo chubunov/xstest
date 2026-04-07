@@ -42,16 +42,11 @@ class OrderManager {
     async login(login, password, remember = false) {
         this.showLoading();
         try {
-            const formData = new FormData();
-            formData.append('action', 'login');
-            formData.append('login', login);
-            formData.append('password', password);
-            formData.append('t', Date.now());
+            const response = await fetch(`${this.apiUrl}?action=login&login=${encodeURIComponent(login)}&password=${encodeURIComponent(password)}&t=${Date.now()}`);
             
-            const response = await fetch(this.apiUrl, {
-                method: 'POST',
-                body: formData
-            });
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
             
             const data = await response.json();
             
@@ -71,7 +66,9 @@ class OrderManager {
                 this.updateUIForAuth();
                 this.showNotification(`✅ Добро пожаловать, ${this.currentUser}!`, 'success');
                 
-                await this.loadOrders();
+                // ✅ ЗАГРУЖАЕМ ДАННЫЕ В ФОНЕ С ИНДИКАЦИЕЙ ПРОГРЕССА
+                await this.loadOrdersWithProgress();
+                
                 this.showDashboard();
                 return true;
             } else {
@@ -80,10 +77,114 @@ class OrderManager {
             }
         } catch (error) {
             console.error('Ошибка входа:', error);
-            this.showNotification('❌ Ошибка соединения с сервером. Проверьте интернет и URL скрипта', 'danger');
+            this.showNotification('❌ Ошибка соединения с сервером', 'danger');
             return false;
         } finally {
             this.hideLoading();
+        }
+    }
+    
+    // ✅ НОВЫЙ МЕТОД - загрузка с прогрессом
+    async loadOrdersWithProgress() {
+        if (!this.isAuthenticated) return;
+        
+        // Показываем прогресс-бар
+        this.showProgressBar('Загрузка заказов...', 0);
+        
+        try {
+            const startTime = Date.now();
+            
+            // Сначала пробуем загрузить из кэша (мгновенно)
+            const cached = localStorage.getItem('xplay_orders_cache');
+            if (cached) {
+                try {
+                    const data = JSON.parse(cached);
+                    if (data.orders && Array.isArray(data.orders)) {
+                        this.orders = data.orders.map(order => this.normalizeOrder(order));
+                        this.showProgressBar('Загрузка заказов...', 30);
+                        this.showNotification(`📦 Загружено ${this.orders.length} заказов из кэша`, 'info');
+                    }
+                } catch (e) {}
+            }
+            
+            // Обновляем прогресс
+            this.showProgressBar('Обновление данных с сервера...', 50);
+            
+            // Загружаем свежие данные с сервера
+            const url = `${this.apiUrl}?action=getOrders&t=${Date.now()}`;
+            const response = await fetch(url);
+            const data = await response.json();
+            
+            this.showProgressBar('Обработка данных...', 80);
+            
+            if (data.success) {
+                this.orders = (data.orders || []).map(order => this.normalizeOrder(order));
+                this.saveToCache();
+                this.showProgressBar('Готово!', 100);
+                
+                const loadTime = Date.now() - startTime;
+                console.log(`Загружено ${this.orders.length} заказов за ${loadTime}ms`);
+                
+                setTimeout(() => this.hideProgressBar(), 500);
+            } else {
+                this.hideProgressBar();
+                if (!this.orders.length) {
+                    this.showNotification('Не удалось загрузить данные с сервера', 'warning');
+                }
+            }
+        } catch (error) {
+            console.error('Ошибка загрузки:', error);
+            this.hideProgressBar();
+            if (!this.orders.length) {
+                this.showNotification('Ошибка соединения', 'warning');
+            }
+        }
+    }
+    
+    // Показать прогресс-бар
+    showProgressBar(message, percent) {
+        let progressContainer = document.getElementById('progressContainer');
+        if (!progressContainer) {
+            // Создаем прогресс-бар, если его нет
+            const container = document.createElement('div');
+            container.id = 'progressContainer';
+            container.className = 'position-fixed top-0 start-0 w-100 p-3';
+            container.style.zIndex = '10000';
+            container.style.backgroundColor = 'rgba(0,0,0,0.8)';
+            container.innerHTML = `
+                <div class="container">
+                    <div class="card">
+                        <div class="card-body">
+                            <div class="d-flex justify-content-between mb-2">
+                                <span id="progressMessage">Загрузка...</span>
+                                <span id="progressPercent">0%</span>
+                            </div>
+                            <div class="progress">
+                                <div id="progressBar" class="progress-bar progress-bar-striped progress-bar-animated" 
+                                     style="width: 0%"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(container);
+            progressContainer = container;
+        }
+        
+        progressContainer.style.display = 'block';
+        document.getElementById('progressMessage').textContent = message;
+        document.getElementById('progressPercent').textContent = `${percent}%`;
+        document.getElementById('progressBar').style.width = `${percent}%`;
+        
+        if (percent >= 100) {
+            setTimeout(() => this.hideProgressBar(), 1000);
+        }
+    }
+    
+    hideProgressBar() {
+        const container = document.getElementById('progressContainer');
+        if (container) {
+            container.style.display = 'none';
         }
     }
 
